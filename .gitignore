@@ -1,0 +1,11 @@
+# signing material must never be committed
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+.env*
+# generated
+*.xcodeproj/
+build/
+DerivedData/
+.DS_Store
