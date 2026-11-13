@@ -23,6 +23,10 @@ struct ARContainer: UIViewRepresentable {
             let store = store
             DispatchQueue.main.async { store.lidarActive = true }
         }
+        if config.sceneReconstruction == .mesh {
+            // Lets us raycast straight against the LiDAR mesh when ARKit has no plane yet.
+            arView.environment.sceneUnderstanding.options.insert(.collision)
+        }
         arView.session.delegate = coordinator
         arView.session.run(config)
 
@@ -56,6 +60,10 @@ struct ARContainer: UIViewRepresentable {
         var updateSubscription: Cancellable?
         private var markers: [UUID: AnchorEntity] = [:]
         private var lastRaycast: CFTimeInterval = 0
+        private var lastDiag: CFTimeInterval = 0
+        private var hits = 0, tries = 0
+        private var tracking = "starting"
+        private var lumens: CGFloat = -1
 
         init(store: SurveyStore) { self.store = store }
 
@@ -63,20 +71,46 @@ struct ARContainer: UIViewRepresentable {
             let now = CACurrentMediaTime()
             guard now - lastRaycast > 0.1, let arView else { return }
             lastRaycast = now
-            if let lumens = arView.session.currentFrame?.lightEstimate?.ambientIntensity {
-                store.updateLight(lumens)
+            if let l = arView.session.currentFrame?.lightEstimate?.ambientIntensity {
+                lumens = l
+                store.updateLight(l)
             }
             let centre = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
-            var hit = arView.raycast(from: centre, allowing: .estimatedPlane, alignment: .horizontal).first
-            if hit == nil {
-                hit = arView.raycast(from: centre, allowing: .estimatedPlane, alignment: .any).first
-            }
-            if let hit {
-                let t = hit.worldTransform.columns.3
-                store.crosshair = SIMD3<Float>(t.x, t.y, t.z)
+            let point = groundPoint(arView, centre)
+            tries += 1
+            if let point {
+                hits += 1
+                store.crosshair = point
             } else if store.crosshair != nil {
                 store.crosshair = nil
             }
+            if now - lastDiag > 0.5 {
+                lastDiag = now
+                let anchors = arView.session.currentFrame?.anchors ?? []
+                let planes = anchors.filter { $0 is ARPlaneAnchor }.count
+                let meshes = anchors.filter { $0 is ARMeshAnchor }.count
+                let light = lumens < 0 ? "?" : String(Int(lumens))
+                store.diagnostics = "track \(tracking) · light \(light) · planes \(planes) · mesh \(meshes) · hits \(hits)/\(tries)"
+                hits = 0; tries = 0
+            }
+        }
+
+        /// ARKit plane/depth raycast first, then the LiDAR mesh.
+        private func groundPoint(_ arView: ARView, _ centre: CGPoint) -> SIMD3<Float>? {
+            for target in [ARRaycastQuery.Target.existingPlaneGeometry, .estimatedPlane] {
+                for alignment in [ARRaycastQuery.TargetAlignment.horizontal, .any] {
+                    if let hit = arView.raycast(from: centre, allowing: target, alignment: alignment).first {
+                        let t = hit.worldTransform.columns.3
+                        return SIMD3<Float>(t.x, t.y, t.z)
+                    }
+                }
+            }
+            if let ray = arView.ray(through: centre),
+               let hit = arView.scene.raycast(origin: ray.origin, direction: ray.direction, length: 30,
+                                              query: .nearest, mask: .all, relativeTo: nil).first {
+                return hit.position
+            }
+            return nil
         }
 
         func syncMarkers(with pins: [Pin]) {
@@ -132,6 +166,11 @@ struct ARContainer: UIViewRepresentable {
 
         func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
             switch camera.trackingState {
+            case .normal: tracking = "ok"
+            case .notAvailable: tracking = "none"
+            case .limited(let r): tracking = "limited(\(r))"
+            }
+            switch camera.trackingState {
             case .normal:
                 store.trackingMessage = nil
             case .notAvailable:
@@ -152,6 +191,10 @@ struct ARContainer: UIViewRepresentable {
 
         func sessionWasInterrupted(_ session: ARSession) {
             store.trackingMessage = "Paused. Measurements may shift when it resumes"
+        }
+
+        func session(_ session: ARSession, didFailWithError error: Error) {
+            store.trackingMessage = "AR stopped: \(error.localizedDescription)"
         }
 
         func sessionInterruptionEnded(_ session: ARSession) {

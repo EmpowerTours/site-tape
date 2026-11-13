@@ -20,6 +20,13 @@ struct ContentView: View {
 
             VStack(spacing: 10) {
                 readout
+                if !store.diagnostics.isEmpty {
+                    Text(store.diagnostics)
+                        .font(.caption2.monospaced())
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .foregroundStyle(.white)
+                }
                 if let message = store.trackingMessage {
                     Text(message)
                         .font(.footnote.weight(.semibold))

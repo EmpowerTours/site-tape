@@ -37,6 +37,8 @@ final class SurveyStore: ObservableObject {
     /// The camera sees very little light.
     @Published var isDark = false
     @Published var torchOn = false
+    /// One-line status for troubleshooting, shown under the readout.
+    @Published var diagnostics = ""
     /// nil until the user taps the light button; after that we never override them.
     private var torchUserChoice: Bool?
 
