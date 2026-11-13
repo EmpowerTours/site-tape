@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import simd
 
@@ -33,6 +34,11 @@ final class SurveyStore: ObservableObject {
     @Published var crosshair: SIMD3<Float>?
     @Published var trackingMessage: String?
     @Published var lidarActive = false
+    /// The camera sees very little light.
+    @Published var isDark = false
+    @Published var torchOn = false
+    /// nil until the user taps the light button; after that we never override them.
+    private var torchUserChoice: Bool?
 
     /// The world frame of this launch's AR session.
     let frameID = UUID()
@@ -87,6 +93,28 @@ final class SurveyStore: ObservableObject {
     func newSession() {
         pins = []
         originID = nil
+    }
+
+    // MARK: light
+
+    func setTorch(_ on: Bool, byUser: Bool) {
+        if byUser { torchUserChoice = on }
+        if Torch.set(on) { torchOn = on }
+    }
+
+    /// Called ~10 times a second with ARKit's ambient light estimate
+    /// (about 1000 in a lit room, near 0 in darkness).
+    func updateLight(_ lumens: CGFloat) {
+        // Once the torch is on the estimate rises, so only judge darkness with it off.
+        guard !torchOn else { return }
+        let dark = lumens < 250
+        if dark != isDark { isDark = dark }
+        if dark && torchUserChoice == nil { setTorch(true, byUser: false) }
+    }
+
+    /// Re-light after an interruption; iOS turns the torch off when the camera pauses.
+    func reapplyTorch() {
+        if torchOn { _ = Torch.set(true) }
     }
 
     // MARK: persistence

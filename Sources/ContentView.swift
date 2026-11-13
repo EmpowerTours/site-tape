@@ -96,6 +96,13 @@ struct ContentView: View {
             .tint(.orange)
             .disabled(store.crosshair == nil)
 
+            if Torch.available {
+                Button { store.setTorch(!store.torchOn, byUser: true) } label: {
+                    Label("Light", systemImage: store.torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
+                }
+                .tint(store.torchOn ? Color.yellow : nil)
+            }
+
             Button { showPlan = true } label: {
                 Label("Plan", systemImage: "square.grid.3x3")
             }
@@ -150,6 +157,12 @@ struct TipsView: View {
                     Text("Walk slowly and keep the camera on the ground as you go. Fast turns make the measurements drift.")
                     Text("Check the drift: at the end, walk back to your first pin and aim at it. A good walk reads under about 0.2 m.")
                     Text("If the app is closed or interrupted, start a New session. Pins from different sessions can't be measured against each other.")
+                }
+                Section("At night") {
+                    Text("The light turns on by itself when it gets dark. Tap Light to switch it on or off.")
+                    Text("The light reaches about 3 to 5 m. Walk up to each thing and drop the pin at your feet instead of aiming from far away.")
+                    Text("Keep the camera on the lit ground while you walk between points. If the screen says \"Too dark\", stop, point at the ground close to you, and wait for the crosshair to turn orange.")
+                    Text("The light uses battery and the phone may get warm. Start with a full charge.")
                 }
                 Section("Send the results") {
                     Text("Open Plan, then Export. Send the JSON and the plan picture to Claude.")

@@ -46,6 +46,7 @@ struct ARContainer: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: ARView, coordinator: Coordinator) {
         coordinator.updateSubscription?.cancel()
+        _ = Torch.set(false)
         uiView.session.pause()
     }
 
@@ -62,6 +63,9 @@ struct ARContainer: UIViewRepresentable {
             let now = CACurrentMediaTime()
             guard now - lastRaycast > 0.1, let arView else { return }
             lastRaycast = now
+            if let lumens = arView.session.currentFrame?.lightEstimate?.ambientIntensity {
+                store.updateLight(lumens)
+            }
             let centre = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
             var hit = arView.raycast(from: centre, allowing: .estimatedPlane, alignment: .horizontal).first
             if hit == nil {
@@ -135,7 +139,10 @@ struct ARContainer: UIViewRepresentable {
             case .limited(let reason):
                 switch reason {
                 case .excessiveMotion: store.trackingMessage = "Slow down"
-                case .insufficientFeatures: store.trackingMessage = "Point at textured ground"
+                case .insufficientFeatures:
+                    store.trackingMessage = store.isDark || store.torchOn
+                        ? "Too dark: light on, aim at the ground 1–3 m ahead"
+                        : "Point at textured ground"
                 case .initializing: store.trackingMessage = "Starting… move the phone slowly"
                 case .relocalizing: store.trackingMessage = "Relocalizing…"
                 @unknown default: store.trackingMessage = "Tracking limited"
@@ -145,6 +152,10 @@ struct ARContainer: UIViewRepresentable {
 
         func sessionWasInterrupted(_ session: ARSession) {
             store.trackingMessage = "Paused. Measurements may shift when it resumes"
+        }
+
+        func sessionInterruptionEnded(_ session: ARSession) {
+            store.reapplyTorch()
         }
     }
 }
